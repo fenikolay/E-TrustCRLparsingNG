@@ -1,139 +1,237 @@
-import os
+from msilib.schema import Error
+import os, sys
 import configparser
 import datetime
+import logging
+from logging.config import fileConfig
+from tkinter import E
 
-config = configparser.ConfigParser()
-if os.path.isfile('settings.ini'):
-    config.read('settings.ini')
-else:
-    open('settings.ini', 'w').close()
-    config['Folders'] = {'certs': 'certs/',
-                         'crls': 'crls/',
-                         'tmp': 'temp/',
-                         'logs': 'logs/',
-                         'to_uc': 'to_uc/',
-                         'uc': 'uc/'}
-    config['MainWindow'] = {'width ': '1100',
-                            'height ': '650',
-                            'saveWidth': 'No',
-                            'AllowResize': 'Yes'}
-    config['Bd'] = {'type': 'sqlite3',
-                    'name': 'cert_crl.db'}
-    config['Socket'] = {'timeout ': 'No'}
-    config['Listing'] = {'uc': '500',
-                         'crl': '500',
-                         'cert': '500',
-                         'watch': '500'}
+DEFAULT_ETRUST_URL = 'https://e-trust.gosuslugi.ru/CA/DownloadTSL?schemaVersion=0'
+DEFAULT_ETRUST_FILENAME = 'tsl.xml'
+BASE_DIR = os.getcwd()
+DEFAULT_CONFIG_FILENAME = 'settings.ini'
+LOG_SUBDIR = 'logs'
+MAIN_UC_OGRN = '1047702026701'
+SELF_UC_OGRN = '1020203227263'
+DEFAULT_MAIN_LOGNAME = 'etrust.log'
+DEFAULT_DOWNLOAD_LOGNAME = 'etrust_download.log'
+LOG_FORMAT = r'%(asctime)s - %(levelname)s - %(message)s'
+DATE_FORMAT = r'%d-%m-%Y %H:%M:%S %z'
+ROTATING_FILE_HANDLER_KWARGS = r'{"maxBytes": 1048576, "backupCount": 10, "encoding": "utf8"}'
+FILE_HANDLER_KWARGS = r'{"encoding": "utf8"}'
+MAIN_LOG_NAME = 'logg'
+DOWNLOAD_LOG_NAME = 'downlog'
+
+
+DEFAULT_CONFIGURATION = {
+    'BaseDir': {
+        'cwd': BASE_DIR
+    },
+    'ETrust' : {
+        'url': DEFAULT_ETRUST_URL,
+        'file': DEFAULT_ETRUST_FILENAME
+    },
+    'Folders': {
+        'certs': 'certs',
+        'crls': 'crls',
+        'tmp': 'temp',
+        'logs': LOG_SUBDIR,
+        'to_uc': 'to_uc',
+        'uc': 'uc'
+    },
+    'MainWindow': {
+        'width': '1100',
+        'height': '650',
+        'saveWidth': 'No',
+        'AllowResize': 'Yes'
+    },
+    'Bd': {
+        'type': 'sqlite3',
+        'name': 'cert_crl.db'
+    },
+    'Socket': {
+        'timeout': 'No'
+    },
+    'Listing': {
+        'uc': '500',
+        'crl': '500',
+        'cert': '500',
+        'watch': '500'
+    },
     # windowsvista, Windows, Fusion
-    config['Style'] = {'window': 'Fusion',
-                       'extendetColorInfo': 'No'}
-    config['Proxy'] = {'proxyOn': 'No',
-                       'ip': '',
-                       'port': '',
-                       'login': '',
-                       'password': ''}
-    config['Update'] = {'priority': 'custom',
-                        'advancedChecking': 'Yes',
-                        'viewingCRLlastNextUpdate': 'Yes',
-                        'allowupdatecrlbystart': 'No',
-                        'allowupdatetslbystart': 'No',
-                        'deltaupdateinday': '10',
-                        'timebeforeupdate': '20',
-                        'main_uc_ogrn': '1047702026701',
-                        'self_uc_ogrn': '1020203227263'}
-    config['Backup'] = {'backUPbyStart': 'Yes'}
-    config['Tabs'] = {'ucLimit': '500',
-                      'ucAllowDelete': 'No',
-                      'crlLimit': '500',
-                      'crlAllowDelete': 'No',
-                      'certLimit': '500',
-                      'certAllowDelete': 'No',
-                      'wcLimit': '500',
-                      'wcAllowDelete': 'No',
-                      'wccLimit': '500',
-                      'wccAllowDelete': 'No',
-                      'wcdLimit': '500',
-                      'wcdAllowDelete': 'No'}
-    config['Schedule'] = {'allowSchedule': 'No',
-                          'weekUpdate': 'All',
-                          'timeUpdate': '1M',
-                          'periodUpdate': '9:00; 12:00; 16:00',
-                          'allowUpdateTSLbyStart': 'No',
-                          'allowUpdateCRLbyStart': 'No',
-                          'rangeUpdateCRL': '5day'}
-    config['Sec'] = {'allowImportCRL': 'No',
-                     'allowExportCRL': 'No',
-                     'allowDeleteWatchingCRL': 'No',
-                     'allowDownloadButtonCRL': 'Yes',
-                     'allowCheckButtonCRL': 'Yes'}
-    config['Logs'] = {'dividelogsbyday': 'Yes',
-                      'dividelogsbysize': '1024',
-                      'loglevel': '9'}
-    config['XMPP'] = {'server': '',
-                      'login': '',
-                      'password': '',
-                      'tosend': '',
-                      'sendinfoerr': 'No',
-                      'sendinfonewcrl': 'No',
-                      'sendinfonewtsl': 'No'}
-    config['Custom'] = {'main_uc_ogrn': '1047702026701',
-                        'self_uc_ogrn': '1020203227263'}
-    with open('settings.ini', 'w') as configfile:
-        config.write(configfile)
+    'Style': {
+        'window': 'Fusion',
+        'extendetColorInfo': 'No'
+    },
+    'Proxy': {
+        'proxyOn': 'No',
+        'ip': '',
+        'port': '',
+        'login': '',
+        'password': ''
+    },
+    'Update': {
+        'priority': 'custom',
+        'advancedChecking': 'Yes',
+        'viewingCRLlastNextUpdate': 'Yes',
+        'allowupdatecrlbystart': 'No',
+        'allowupdatetslbystart': 'No',
+        'deltaupdateinday': '10',
+        'timebeforeupdate': '20',
+        'main_uc_ogrn': MAIN_UC_OGRN, # Продубливано в секции Custom
+        'self_uc_ogrn': SELF_UC_OGRN  # Продубливано в секции Custom
+    },
+    'Backup': {
+        'backUPbyStart': 'Yes'
+    },
+    'Tabs': {
+        'ucLimit': '500',
+        'ucAllowDelete': 'No',
+        'crlLimit': '500',
+        'crlAllowDelete': 'No',
+        'certLimit': '500',
+        'certAllowDelete': 'No',
+        'wcLimit': '500',
+        'wcAllowDelete': 'No',
+        'wccLimit': '500',
+        'wccAllowDelete': 'No',
+        'wcdLimit': '500',
+        'wcdAllowDelete': 'No'
+    },
+    'Schedule': {
+        'allowSchedule': 'No',
+        'weekUpdate': 'All',
+        'timeUpdate': '1M',
+        'periodUpdate': '9:00; 12:00; 16:00',
+        'allowUpdateTSLbyStart': 'No',
+        'allowUpdateCRLbyStart': 'No',
+        'rangeUpdateCRL': '5day'
+    },
+    'Sec': {
+        'allowImportCRL': 'No',
+        'allowExportCRL': 'No',
+        'allowDeleteWatchingCRL': 'No',
+        'allowDownloadButtonCRL': 'Yes',
+        'allowCheckButtonCRL': 'Yes'
+    },
+    'Logs': {
+        'dividelogsbyday': 'Yes',
+        'dividelogsbysize': '1024',
+        'loglevel': '9'
+    },
+    'XMPP': {
+        'server': '',
+        'login': '',
+        'password': '',
+        'tosend': '',
+        'sendinfoerr': 'No',
+        'sendinfonewcrl': 'No',
+        'sendinfonewtsl': 'No'
+    },
+    'loggers': {
+        'keys': 'root, download',
+    },
+    'logger_root': {
+        'level': 'NOTSET',
+        'handlers': 'logrotate',
+        'qualname': MAIN_LOG_NAME
+        },
+    'logger_download': {
+        'level': 'INFO',
+        'handlers': 'updfile',
+        'propagate': '1',
+        'qualname': DOWNLOAD_LOG_NAME
+    },
+    'handlers': {
+        'keys': 'logrotate, updfile'
+    },
+    'formatters': {
+        'keys': 'mainform'
+    },
+    'handler_logrotate': {
+        'class': 'logging.handlers.RotatingFileHandler',
+        'args': f'("{os.path.join(BASE_DIR, LOG_SUBDIR, DEFAULT_MAIN_LOGNAME)}", "a")',
+        'kwargs': ROTATING_FILE_HANDLER_KWARGS,
+        'formatter': 'mainform'
+    },
+    'handler_updfile': {
+        'class': 'FileHandler',
+        'args': f'("{os.path.join(BASE_DIR, LOG_SUBDIR, DEFAULT_DOWNLOAD_LOGNAME)}", "w")',
+        'kwargs': FILE_HANDLER_KWARGS,
+        'formatters': 'mainform'
+    },
+    'formatter_mainform':{
+        'format': LOG_FORMAT,
+        'datefmt': DATE_FORMAT,
+    },
+    'Custom': {
+        'main_uc_ogrn': MAIN_UC_OGRN,
+        'self_uc_ogrn': SELF_UC_OGRN
+    }                            
+}
 
-try:
-    os.makedirs(config['Folders']['certs'])
-except OSError:
-    pass
-try:
-    os.makedirs(config['Folders']['crls'])
-except OSError:
-    pass
-try:
-    os.makedirs(config['Folders']['tmp'])
-except OSError:
-    pass
-try:
-    os.makedirs(config['Folders']['to_uc'])
-except OSError:
-    pass
-try:
-    os.makedirs(config['Folders']['uc'])
-except OSError:
-    pass
-try:
-    os.makedirs(config['Folders']['logs'])
-except OSError:
-    pass
+class Configurator():
+    """
+    Объект загружающий, обновляющий и сохраняющий конфигурацию
+    """
+    def __init__(self):
+        self.config = configparser.ConfigParser(
+            comment_prefixes=('#',),
+            interpolation=configparser.ExtendedInterpolation()
+        )
+        self.configure()
 
-if config['Logs']['dividelogsbyday'] == 'Yes':
-    datetime_day = '_' + datetime.datetime.now().strftime('%Y%m%d')
-else:
-    datetime_day = ''
+    def __new__(cls):
+        if not hasattr(cls, 'instance'):
+            cls.instance = super(Configurator, cls).__new__(cls)
+        return cls.instance
 
-open(config['Folders']['logs'] + "/error" + datetime_day + ".log", "a").write('')
-open(config['Folders']['logs'] + "/log" + datetime_day + ".log", "a").write('')
-open(config['Folders']['logs'] + "/download" + datetime_day + ".log", "a").write('')
-
-def logs(body, kind='', log_level=''):
-    if int(log_level) <= int(config['Logs']['loglevel']):
-        if kind == 'errors':
-            with open(config['Folders']['logs'] + "/error" + datetime_day + ".log", "a") as file:
-                file.write(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S') + '    ' + body + '\n')
-            file.close()
-        elif kind == 'download':
-            with open(config['Folders']['logs'] + "/download" + datetime_day + ".log", "a") as file:
-                file.write(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S') + '    ' + body + '\n')
-            file.close()
+    def set_default_config(self, section=None):
+        if section is not None:
+            self.config[section] = DEFAULT_CONFIGURATION[section]
         else:
-            with open(config['Folders']['logs'] + "/log" + datetime_day + ".log", "a") as file:
-                file.write(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S') + '    ' + body + '\n')
-            file.close()
+            for section in DEFAULT_CONFIGURATION.keys():
+                self.config[section] = DEFAULT_CONFIGURATION[section]
+    
+    def write_configuration(self, filename=DEFAULT_CONFIG_FILENAME):
+        with open(filename, 'w') as configfile:
+            self.config.write(configfile)
+   
+    def create_folders(self, folders):
+        for folder in folders:
+            if not os.path.exists(folder):
+                try:
+                    os.makedirs(folder)
+                except Exception as e:
+                    print(e)
 
-def set_value_in_property_file(file_path, section, key, value):
-    set_config = configparser.ConfigParser()
-    set_config.read(file_path)
-    set_config.set(section, key, value)
-    config_file = open(file_path, 'w')
-    set_config.write(config_file, space_around_delimiters=False)
-    config_file.close()
+    def read_update_config_file(self, filename=DEFAULT_CONFIG_FILENAME):
+        if os.path.isfile(filename):
+            self.config.read(filename)
+            for section in DEFAULT_CONFIGURATION.keys():
+                if section in self.config:
+                    for key in DEFAULT_CONFIGURATION[section]:
+                        if key not in self.config[section]:
+                            self.config.set(section, key, DEFAULT_CONFIGURATION[section][key])
+                else:
+                    self.set_default_config(section)
+        else:
+            self.set_default_config()
+        self.write_configuration(filename)
+
+    def set_value_in_property_file(self, filename, section, key, value):
+        self.config.set(section, key, value)
+        self.write_configuration(filename)
+
+    def configure(self):
+        #with open(os.path.join(os.getcwd(), 'error.log'), 'w', encoding='utf8') as error:
+        #    sys.stderr = error
+        self.read_update_config_file()
+        self.create_folders(self.config['Folders'].values())
+        logging.config.fileConfig(self.config)
+        self.logg = logging.getLogger()
+        self.downlog = logging.getLogger('downlog')
+
+configurator = Configurator()
+
+

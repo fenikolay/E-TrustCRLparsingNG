@@ -7,8 +7,7 @@ import datetime
 from urllib import request
 from lxml import etree
 from model import CERT, UC, WatchingCRL, WatchingCustomCRL, WatchingDeletedCRL
-from configurator import config, logs
-
+from configurator import configurator
 
 def progressbar(cur, total=100):
     percent = '{:.2%}'.format(cur / total)
@@ -77,13 +76,13 @@ def open_file(file_name, file_type, url='None'):
         folder = 'strs'
 
     run_dll = "%SystemRoot%\\System32\\rundll32.exe cryptext.dll," + type_crypto_dll
-    path = os.path.realpath(config['Folders'][folder] + "/" + file_name + "." + file_type)
+    path = os.path.realpath(configurator.config['Folders'][folder] + "/" + file_name + "." + file_type)
     print(path)
     if not os.path.exists(path):
         if file_type == 'cer':
-            save_cert(file_name, config['Folders']['certs'])
+            save_cert(file_name, configurator.config['Folders']['certs'])
         elif file_type == 'crl':
-            download_file(url, file_name + '.crl', config['Folders']['crls'])
+            download_file(url, file_name + '.crl', configurator.config['Folders']['crls'])
     else:
         open_crl = run_dll + "  " + path
         os.system(open_crl)
@@ -92,21 +91,20 @@ def save_cert(key_id, folder):
     for certs in CERT.select().where(CERT.KeyId == key_id):
         with open(folder + "/" + certs.KeyId + ".cer", "wb") as file:
             file.write(base64.decodebytes(certs.Data.encode()))
-        if folder == config['Folders']['certs']:
-            os.startfile(os.path.realpath(config['Folders']['certs']))
-            print(os.path.realpath(config['Folders']['certs']))
-        elif folder == config['Folders']['to_uc']:
-            os.startfile(os.path.realpath(config['Folders']['to_uc']))
-            print(os.path.realpath(config['Folders']['to_uc']))
+        if folder == configurator.config['Folders']['certs']:
+            os.startfile(os.path.realpath(configurator.config['Folders']['certs']))
+            print(os.path.realpath(configurator.config['Folders']['certs']))
+        elif folder == configurator.config['Folders']['to_uc']:
+            os.startfile(os.path.realpath(configurator.config['Folders']['to_uc']))
+            print(os.path.realpath(configurator.config['Folders']['to_uc']))
 
 
 def copy_crl_to_uc(rki):
-    if os.path.exists(config['Folders']['crls'] + '/' + rki + '.crl'):
-        shutil.copy2(config['Folders']['crls'] + '/' + rki + '.crl', config['Folders']['to_uc'] + '/' + rki + '.crl')
-        print('Found ' + config['Folders']['crls'] + '/' + rki + '.crl, copy.')
+    if os.path.exists(configurator.config['Folders']['crls'] + '/' + rki + '.crl'):
+        shutil.copy2(configurator.config['Folders']['crls'] + '/' + rki + '.crl', configurator.config['Folders']['to_uc'] + '/' + rki + '.crl')
+        configurator.logg.info('Found ' + configurator.config['Folders']['crls'] + '/' + rki + '.crl, copy.')
     else:
-        print('Not found ' + config['Folders']['crls'] + '/' + rki + '.crl')
-        logs('Info: Not found ' + config['Folders']['crls'] + '/' + rki + '.crl', 'info', '5')
+        configurator.logg.info('Not found ' + configurator.config['Folders']['crls'] + '/' + rki + '.crl')
 
 
 
@@ -114,15 +112,15 @@ def copy_crl_to_uc(rki):
 
 def check_custom_crl(id_custom_crl, name, id_key, url_crl=''):
     issuer = {}
-    if not os.path.isfile(config['Folders']['crls'] + '/' + str(id_key) + '.crl'):
+    if not os.path.isfile(configurator.config['Folders']['crls'] + '/' + str(id_key) + '.crl'):
         if not download_file(url_crl,
                              id_key + '.crl',
-                             config['Folders']['crls'],
+                             configurator.config['Folders']['crls'],
                              'custome',
                              str(id_custom_crl),
                              'Yes') == 'down_success':
             print('Warning: check_custom_crl::down_error ' + name)
-            logs('Warning: check_custom_crl::down_error ' + name, 'warn', '4')
+            configurator.logg.warning('Check_custom_crl::down_error ' + name)
             return 'down_error'
     crl = OpenSSL.crypto.load_crl(OpenSSL.crypto.FILETYPE_ASN1,
                                   open('crls/' + str(id_key) + '.crl', 'rb').read())
@@ -144,8 +142,7 @@ def check_custom_crl(id_custom_crl, name, id_key, url_crl=''):
     query_update.execute()
     issuer['INN'] = 'Unknown'
     issuer['OGRN'] = 'Unknown'
-    print('Info: check_custom_crl()::success ' + name)
-    logs('Info: check_custom_crl()::success ' + name, 'info', '5')
+    configurator.logg.info('Check_custom_crl()::success ' + name)
     return 'check_success'
     # query_update = WatchingCustomCRL.update(status='Warning: FILETYPE ERROR',
     #                                         last_update='1970-01-01',
@@ -154,16 +151,16 @@ def check_custom_crl(id_custom_crl, name, id_key, url_crl=''):
 
 
 def check_crl(id_wc, name_wc, key_id_wc, url_crl=''):
-    if not os.path.isfile(config['Folders']['crls'] + '/' + str(key_id_wc) + '.crl'):
+    if not os.path.isfile(configurator.config['Folders']['crls'] + '/' + str(key_id_wc) + '.crl'):
         if download_file(url_crl,
                          key_id_wc + '.crl',
-                         config['Folders']['crls'],
+                         configurator.config['Folders']['crls'],
                          'current',
                          str(id_wc),
                          'Yes') == 'down_success':
             crl = OpenSSL.crypto.load_crl(
                 OpenSSL.crypto.FILETYPE_ASN1,
-                open(config['Folders']['crls'] + '/' + str(key_id_wc) + '.crl', 'rb').read())
+                open(configurator.config['Folders']['crls'] + '/' + str(key_id_wc) + '.crl', 'rb').read())
             cryptography = crl.to_cryptography()
             query_update = WatchingCRL. \
                 update(status='Info: Filetype good',
@@ -171,17 +168,15 @@ def check_crl(id_wc, name_wc, key_id_wc, url_crl=''):
                        next_update=cryptography.next_update + datetime.timedelta(hours=5)).where(
                            WatchingCRL.ID == id_wc)
             query_update.execute()
-            print('Info: check_crl()::success ' + name_wc)
-            logs('Info: check_crl()::success ' + name_wc, 'info', '5')
+            configurator.downlog.info('Check_crl()::success ' + name_wc)
             return 'check_success'
         else:
-            print('Warning: check_crl()::down_error ' + name_wc)
-            logs('Warning: check_crl()::down_error ' + name_wc, 'warn', '4')
+            configurator.downlog.warning('Check_crl()::down_error ' + name_wc)
             return 'down_error'
     else:
         crl = OpenSSL.crypto.load_crl(
             OpenSSL.crypto.FILETYPE_ASN1,
-            open(config['Folders']['crls'] + '/' + str(key_id_wc) + '.crl', 'rb').read())
+            open(configurator.config['Folders']['crls'] + '/' + str(key_id_wc) + '.crl', 'rb').read())
         cryptography = crl.to_cryptography()
         query_update = WatchingCRL. \
             update(status='Info: Filetype good',
@@ -189,8 +184,7 @@ def check_crl(id_wc, name_wc, key_id_wc, url_crl=''):
                    next_update=cryptography.next_update + datetime.timedelta(hours=5)).where(
                        WatchingCRL.ID == id_wc)
         query_update.execute()
-        print('Info: check_crl()::success ' + name_wc)
-        logs('Info: check_crl()::success ' + name_wc, 'info', '5')
+        configurator.downlog.info('Check_crl()::success ' + name_wc)
         return 'check_success'
     # query_update = WatchingCRL.update(status='Warning: FILETYPE ERROR',
     #                                   last_update='1970-01-01',
@@ -199,11 +193,11 @@ def check_crl(id_wc, name_wc, key_id_wc, url_crl=''):
 
 
 def check_for_import_in_uc():
-    folder = config['Folders']['crls']
+    folder = configurator.config['Folders']['crls']
     current_datetimes = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     current_datetime = datetime.datetime.strptime(current_datetimes, '%Y-%m-%d %H:%M:%S')
-    minuts = int(config['Update']['timebeforeupdate'])
-    days = int(config['Update']['deltaupdateinday'])
+    minuts = int(configurator.config['Update']['timebeforeupdate'])
+    days = int(configurator.config['Update']['deltaupdateinday'])
     print(current_datetime)
     current_datetime = current_datetime + datetime.timedelta(minutes=minuts)
     print(current_datetime)
@@ -218,8 +212,8 @@ def check_for_import_in_uc():
                   wc.next_update)
             if download_file(wc.UrlCRL, wc.KeyId + '.crl', folder, 'current', wc.ID, 'Yes') == 'down_success':
 
-                shutil.copy2(config['Folders']['crls'] + '/' + wc.KeyId + '.crl',
-                             config['Folders']['to_uc'] + '/' + 'current_' + wc.KeyId + '.crl')
+                shutil.copy2(configurator.config['Folders']['crls'] + '/' + wc.KeyId + '.crl',
+                             configurator.config['Folders']['to_uc'] + '/' + 'current_' + wc.KeyId + '.crl')
                 check_crl(wc.ID, wc.Name, wc.KeyId)
                 return_list_msg = return_list_msg + ';' + wc.KeyId + ' : ' + wc.Name
                 count = count + 1
@@ -229,31 +223,29 @@ def check_for_import_in_uc():
                   wcc.next_update)
             if download_file(wcc.UrlCRL, wcc.KeyId + '.crl', folder, 'custome', wcc.ID, 'Yes') == 'down_success':
 
-                shutil.copy2(config['Folders']['crls'] + '/' + wcc.KeyId + '.crl',
-                             config['Folders']['to_uc'] + '/' + 'custom_' + wcc.KeyId + '.crl')
+                shutil.copy2(configurator.config['Folders']['crls'] + '/' + wcc.KeyId + '.crl',
+                             configurator.config['Folders']['to_uc'] + '/' + 'custom_' + wcc.KeyId + '.crl')
                 check_custom_crl(wcc.ID, wcc.Name, wcc.KeyId)
                 return_list_msg = return_list_msg + ';' + wcc.KeyId + ' : ' + wcc.Name
                 count = count + 1
     if count > 0:
-        print('Info: Copied ' + str(count) + ' count\'s CRL')
-        logs('Info: Copied ' + str(count) + ' count\'s CRL', 'info', '5')
+        configurator.logg.info('Copied ' + str(count) + ' count\'s CRL')
         return return_list_msg
     else:
-        print('Info: There are no updates for CRL')
-        logs('Info: There are no updates for CRL', 'info', '5')
+        configurator.logg.info('There are no updates for CRL')
         return 'NaN'
 
 
 def download_file(file_url, file_name, folder, type_download='', w_id='', set_dd='No'):
     path = folder + '/' + file_name  # + '.' + type_file
     try:
-        if config['Proxy']['proxyon'] == 'Yes':
+        if configurator.config['Proxy']['proxyon'] == 'Yes':
             proxy = request.ProxyHandler(
-                {'https': 'https://' + config['Proxy']['ip'] + ':' + config['Proxy']['port'],
-                 'http': 'http://' + config['Proxy']['ip'] + ':' + config['Proxy']['port']})
+                {'https': 'https://' + configurator.config['Proxy']['ip'] + ':' + configurator.config['Proxy']['port'],
+                 'http': 'http://' + configurator.config['Proxy']['ip'] + ':' + configurator.config['Proxy']['port']})
             opener = request.build_opener(proxy)
             request.install_opener(opener)
-            logs('Info: Used proxy', 'info', '6')
+            configurator.logg.info('Used proxy', 'info', '6')
         request.urlretrieve(file_url, path, schedule)
     except Exception:
         if set_dd == 'Yes':
@@ -278,8 +270,7 @@ def download_file(file_url, file_name, folder, type_download='', w_id='', set_dd
                 query_update = WatchingCustomCRL.update(download_status='Error: Download failed'
                                                         ).where(WatchingCustomCRL.ID == w_id)
                 query_update.execute()
-        print('Info: Download failed ' + file_url)
-        logs('Info: Download failed ' + file_url, 'download', '4')
+        configurator.downlog.info('Download failed ' + file_url)
         return 'down_error'
     else:
         if set_dd == 'Yes':
@@ -304,8 +295,7 @@ def download_file(file_url, file_name, folder, type_download='', w_id='', set_dd
                 query_update = WatchingCustomCRL.update(download_status='Info: Download successfully'
                                                         ).where(WatchingCustomCRL.ID == w_id)
                 query_update.execute()
-        print('Info: Download successfully ' + file_url)
-        logs('Info: Download successfully ' + file_url, 'download', '5')
+        configurator.downlog.info('Download successfully ' + file_url)
         return 'down_success'
 
 

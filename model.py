@@ -3,21 +3,18 @@ import sqlite3
 import shutil
 import datetime
 from peewee import Model, CharField, SqliteDatabase, DateTimeField, IntegerField, DateField
-from configurator import config, logs
-
+from configurator import configurator
 
 bd_backup_name = str('cert_crl.db_') + datetime.datetime.now().strftime('%Y%m%d') + '.bkp'
 if os.path.isfile(bd_backup_name):
-    print('Info: ' + bd_backup_name + ' exist')
-    logs('Info: ' + bd_backup_name + ' exist', 'info', '7')
-    connect = sqlite3.connect(config['Bd']['name'])
-    db = SqliteDatabase(config['Bd']['name'])
+    configurator.logg.info(bd_backup_name + ' exist')
+    connect = sqlite3.connect(configurator.config['Bd']['name'])
+    db = SqliteDatabase(configurator.config['Bd']['name'])
 else:
     shutil.copy2('cert_crl.db', bd_backup_name)
-    print('Info: ' + bd_backup_name + ' created')
-    logs('Info: ' + bd_backup_name + ' created', 'info', '6')
-    connect = sqlite3.connect(config['Bd']['name'])
-    db = SqliteDatabase(config['Bd']['name'])
+    configurator.logg.info(bd_backup_name + ' created')
+    connect = sqlite3.connect(configurator.config['Bd']['name'])
+    db = SqliteDatabase(configurator.config['Bd']['name'])
 
 class UC(Model):
     ID = IntegerField(primary_key=True)

@@ -17,10 +17,11 @@ import re
 import shutil
 import sys
 import time
+from contextlib import redirect_stdout, redirect_stderr
 
 from model import UC, CERT, CRL, WatchingCRL, WatchingCustomCRL, WatchingDeletedCRL, Settings
 from base64_codes import *
-from configurator import config, logs, set_value_in_property_file
+from configurator import configurator
 from utilities import save_cert, download_file,  copy_crl_to_uc, export_all_watching_crl
 from utilities import get_info_xlm, check_crl, check_custom_crl, check_for_import_in_uc
 
@@ -43,16 +44,6 @@ if not WatchingDeletedCRL.table_exists():
     WatchingDeletedCRL.create_table()
 
 
-
-
-
-
-
-
-
-
-
-
 class DownloadAllCRL(QObject):
 
     threadInfoMessage = pyqtSignal(str)
@@ -66,7 +57,7 @@ class DownloadAllCRL(QObject):
     def task(self):
 
         print('Info: Starting checking CRL')
-        logs('Info: Starting checking CRL', 'info', '6')
+        configurator.logg.info('Starting checking CRL')
         # self.threadInfoMessage.emit('Info: Starting checking CRL')
         if not self._isRunning:
             self._isRunning = True
@@ -86,7 +77,7 @@ class DownloadAllCRL(QObject):
                 file_name = wc.KeyId + '.crl'
                 # file_name = wc.UrlCRL.split('/')[-1]
                 # file_name = wcc.KeyId
-                folder = config['Folders']['crls']
+                folder = configurator.config['Folders']['crls']
                 self.threadInfoMessage.emit(
                     str(counter_watching_crl) + ' из ' + str(
                         counter_watching_crl_all) + ' Загружаем: ' + str(
@@ -94,14 +85,14 @@ class DownloadAllCRL(QObject):
                 download_file(file_url, file_name, folder, 'current', wc.ID)
                 # Downloader(str(wc.UrlCRL), str(wc.SerialNumber)+'.crl')
             print('WatchingCRL downloaded ' + str(counter_watching_crl))
-            logs('Info: WatchingCRL downloaded ' + str(counter_watching_crl), 'info', '5')
+            configurator.logg.info('WatchingCRL downloaded ' + str(counter_watching_crl))
             for wcc in query_2:
                 counter_watching_custom_crl = counter_watching_custom_crl + 1
                 file_url = wcc.UrlCRL
                 file_name = wcc.KeyId + '.crl'
                 # file_name = wcc.UrlCRL.split('/')[-1]
                 # file_name = wcc.KeyId
-                folder = config['Folders']['crls']
+                folder = configurator.config['Folders']['crls']
                 self.threadInfoMessage.emit(
                     str(counter_watching_custom_crl) + ' из ' + str(
                         watching_custom_crl_all) + ' Загружаем: ' + str(
@@ -110,17 +101,18 @@ class DownloadAllCRL(QObject):
                 # Downloader(str(wcc.UrlCRL), str(wcc.SerialNumber)+'.crl'
             self.threadInfoMessage.emit('Загрузка закончена')
             print('WatchingCustomCRL downloaded ' + str(counter_watching_custom_crl))
-            logs('Info: WatchingCustomCRL downloaded ' + str(counter_watching_custom_crl), 'info', '5')
+            configurator.downlog.info('WatchingCustomCRL downloaded ' + str(counter_watching_custom_crl))
             print('All download done, w=' + str(counter_watching_crl) + ', c=' + str(
                 counter_watching_custom_crl))
-            logs('Info: All download done, w=' + str(counter_watching_crl) + ', c=' + str(
-                counter_watching_custom_crl), 'info', '5')
+            configurator.downlog.info('All download done, w=' + str(counter_watching_crl) + ', c=' + str(
+                counter_watching_custom_crl))
             # self.ui.pushButton_4.setEnabled(True)
+            self.stop()
         else:
             self._isRunning = False
         time.sleep(1)
         print('Info: Checking completed')
-        logs('Info: Checking completed', 'info', '6')
+        configurator.logg.info('Checking completed')
 
     def stop(self):
         self._isRunning = False
@@ -137,7 +129,7 @@ class CheckCRL(QObject):
     def task(self):
 
         print('Info: Starting checking CRL')
-        logs('Info: Starting checking CRL', 'info', '6')
+        configurator.logg.info('Starting checking CRL')
         self.threadInfoMessage.emit('Начинаем проверку')
         if not self._isRunning:
             self._isRunning = True
@@ -145,7 +137,7 @@ class CheckCRL(QObject):
         while self._isRunning:
             self._step += 1
 
-            folder = config['Folders']['crls']
+            folder = configurator.config['Folders']['crls']
             current_datetimes = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             current_datetime = datetime.datetime.strptime(current_datetimes, '%Y-%m-%d %H:%M:%S')
             before_current_date = datetime.datetime.now() - datetime.timedelta(days=5)
@@ -158,8 +150,8 @@ class CheckCRL(QObject):
                     self.threadInfoMessage.emit('Скачиваем: ' + wc.Name)
                     if download_file(wc.UrlCRL, wc.KeyId + '.crl', folder, 'current', wc.ID,
                                      'Yes') == 'down_success':
-                        shutil.copy2(config['Folders']['crls'] + '/' + wc.KeyId + '.crl',
-                                     config['Folders']['to_uc'] + '/' + 'current_' + wc.KeyId + '.crl')
+                        shutil.copy2(configurator.config['Folders']['crls'] + '/' + wc.KeyId + '.crl',
+                                     configurator.config['Folders']['to_uc'] + '/' + 'current_' + wc.KeyId + '.crl')
                         check_crl(wc.ID, wc.Name, wc.KeyId)
                         return_list_msg = return_list_msg + ';' + wc.KeyId + ' ' + wc.Name
                         count = count + 1
@@ -168,22 +160,23 @@ class CheckCRL(QObject):
                     self.threadInfoMessage.emit('Скачиваем: ' + wcc.Name)
                     if download_file(wcc.UrlCRL, wcc.KeyId + '.crl', folder, 'custome', wcc.ID,
                                      'Yes') == 'down_success':
-                        shutil.copy2(config['Folders']['crls'] + '/' + wcc.KeyId + '.crl',
-                                     config['Folders']['to_uc'] + '/' + 'custom_' + wcc.KeyId + '.crl')
+                        shutil.copy2(configurator.config['Folders']['crls'] + '/' + wcc.KeyId + '.crl',
+                                     configurator.config['Folders']['to_uc'] + '/' + 'custom_' + wcc.KeyId + '.crl')
                         check_custom_crl(wcc.ID, wcc.Name, wcc.KeyId)
                         return_list_msg = return_list_msg + ';' + wcc.KeyId + ' ' + wcc.Name
                         count = count + 1
             if count > 0:
                 print('Info: Copied ' + str(count) + ' count\'s CRL')
-                logs('Info: Copied ' + str(count) + ' count\'s CRL', 'info', '5')
+                configurator.downlog.info('Copied ' + str(count) + ' count\'s CRL')
             else:
                 print('Info: There are no updates for CRL')
-                logs('Info: There are no updates for CRL', 'info', '5')
+                configurator.downlog.info('Info: There are no updates for CRL')
+            self.stop()
         else:
             self._isRunning = False
         time.sleep(1)
         print('Info: Checking completed')
-        logs('Info: Checking completed', 'info', '6')
+        configurator.downlog.info('Info: Checking completed')
         self.threadInfoMessage.emit('Проверка завершена')
 
     def stop(self):
@@ -213,7 +206,7 @@ class MainWorker(QObject):
 
     def task(self):
 
-        timer_getting = config['Schedule']['timeUpdate']
+        timer_getting = configurator.config['Schedule']['timeUpdate']
         r = re.compile(r"([0-9]+)([a-zA-Z]+)")
         m = r.match(timer_getting)
 
@@ -253,7 +246,7 @@ class MainWorker(QObject):
                         print('error')
 
         print('Info: Start monitoring CRL')
-        logs('Info: Start monitoring CRL', 'info', '6')
+        configurator.downlog.info('Start monitoring CRL')
         self.threadInfoMessage.emit('Info: Start monitoring CRL')
         self.threadButtonStartD.emit('True')
         self.threadButtonStopE.emit('True')
@@ -327,7 +320,7 @@ class MainWorker(QObject):
             sec_start -= 1
             time.sleep(1)
         print('Info: Monitoring is stopped')
-        logs('Info: Monitoring is stopped', 'info', '6')
+        configurator.downlog.info('Monitoring is stopped')
         self.threadInfoMessage.emit('Info: Monitoring is stopped')
         self.threadButtonStartE.emit('True')
         self.threadButtonStopD.emit('True')
@@ -349,26 +342,26 @@ class Downloader(QThread):
         self.fileUrl = file_url
         self.fileName = file_name
         print('Info: Download starting, ' + self.fileUrl)
-        logs('Info: Download starting, ' + self.fileUrl, 'info', '5')
+        configurator.downlog.info('Download starting, ' + self.fileUrl)
 
     def run(self):
         try:
-            logs('Info: Downloading TSL', 'info', '5')
-            if config['Proxy']['proxyon'] == 'Yes':
+            configurator.downlog.info('Downloading TSL')
+            if configurator.config['Proxy']['proxyon'] == 'Yes':
                 proxy = request.ProxyHandler(
-                    {'https': 'https://' + config['Proxy']['ip'] + ':' + config['Proxy']['port'],
-                     'http': 'http://' + config['Proxy']['ip'] + ':' + config['Proxy']['port']})
+                    {'https': 'https://' + configurator.config['Proxy']['ip'] + ':' + configurator.config['Proxy']['port'],
+                     'http': 'http://' + configurator.config['Proxy']['ip'] + ':' + configurator.config['Proxy']['port']})
                 opener = request.build_opener(proxy)
                 request.install_opener(opener)
-                logs('Info: Used proxy', 'info', '7')
+                configurator.downlog.info('Used proxy')
             request.urlretrieve(self.fileUrl, self.fileName, self._progress)
         except Exception:
             self.done.emit('Ошибка загрузки')
             print('Warning: download failed')
-            logs('Warning: download failed', 'warn', '4')
+            configurator.downlog.warning('download failed')
         else:
             print('Загрузка завершена')
-            logs('Info: Downloading successfully', 'info', '5')
+            configurator.downlog.info('Downloading successfully')
             query_get_settings = Settings.select()
             ver_from_tsl = get_info_xlm('current_version')
             ver = 0
@@ -377,11 +370,11 @@ class Downloader(QThread):
                 break
             if int(ver) == int(ver_from_tsl):
                 print('Info: update not need')
-                logs('Info: update not need', 'info', '6')
+                configurator.downlog.info('TSL update not need')
                 self.done.emit('Загрузка завершена, обновление не требуется')
             else:
                 print('Info: Need update')
-                logs('Info: Need update, new version ' + ver_from_tsl + ', old ' + ver, 'info', '6')
+                configurator.downlog.info('Need TSL update, new version ' + ver_from_tsl + ', old ' + ver)
                 self.done.emit('Загрузка завершена, требуются обновления Базы УЦ и сертификатов. Новая версия '
                                + ver_from_tsl + ' текущая версия ' + ver)
             size_tls = os.path.getsize("tsl.xml")
@@ -520,9 +513,9 @@ class MainWindow(QMainWindow):
         self.sub_tab_watching_disabled_crl()
 
     def init_schedule(self):
-        if config['Schedule']['allowupdatetslbystart'] == 'Yes':
+        if configurator.config['Schedule']['allowupdatetslbystart'] == 'Yes':
             self.download_xml()
-        if config['Schedule']['allowupdatecrlbystart'] == 'Yes':
+        if configurator.config['Schedule']['allowupdatecrlbystart'] == 'Yes':
             self.check_all_crl()
 
     def tab_info(self):
@@ -558,7 +551,7 @@ class MainWindow(QMainWindow):
         self.ui.pushButton_6.setToolTip('Импортировать список CRL')
 
         watching_crl = WatchingCRL.select().order_by(WatchingCRL.next_update).where(
-            WatchingCRL.OGRN == config['Update']['main_uc_ogrn'])
+            WatchingCRL.OGRN == configurator.config['Update']['main_uc_ogrn'])
         self.ui.tableWidget_7.resizeColumnsToContents()
         self.ui.tableWidget_7.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         count = 0
@@ -576,7 +569,7 @@ class MainWindow(QMainWindow):
         self.ui.tableWidget_7.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
 
         watching_crl = WatchingCRL.select().order_by(WatchingCRL.next_update).where(
-            WatchingCRL.OGRN == config['Update']['self_uc_ogrn'])
+            WatchingCRL.OGRN == configurator.config['Update']['self_uc_ogrn'])
         self.ui.tableWidget_8.resizeColumnsToContents()
         self.ui.tableWidget_8.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         count = 0
@@ -593,7 +586,7 @@ class MainWindow(QMainWindow):
         self.ui.tableWidget_8.resizeColumnsToContents()
         self.ui.tableWidget_8.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
 
-        if config['Logs']['dividelogsbyday'] == 'Yes':
+        if configurator.config['Logs']['dividelogsbyday'] == 'Yes':
             date_time_day = '_' + datetime.datetime.now().strftime('%Y%m%d')
         else:
             date_time_day = ''
@@ -612,12 +605,12 @@ class MainWindow(QMainWindow):
         self.worker.threadInfoMessage.connect(lambda msg: self.ui.label_7.setText(msg))
         self.worker.threadInfoMessage.connect(lambda msg: self.ui.label_7.setText(msg))
         self.worker.threadMessageSender.connect(lambda msg: self.add_log_to_main_tab(msg))
-        self.worker.threadMessageSender.connect(lambda: self.ui.textBrowser.setText(
-            open(config['Folders']['logs'] + '/log' + date_time_day + '.log', 'r').read()))
-        self.worker.threadMessageSender.connect(lambda: self.ui.textBrowser_2.setText(
-            open(config['Folders']['logs'] + '/error' + date_time_day + '.log', 'r').read()))
-        self.worker.threadMessageSender.connect(lambda: self.ui.textBrowser_3.setText(
-            open(config['Folders']['logs'] + '/download' + date_time_day + '.log', 'r').read()))
+        #self.worker.threadMessageSender.connect(lambda: self.ui.textBrowser.setText(
+        #    open(configurator.config['Folders']['logs'] + '/log' + date_time_day + '.log', 'r').read()))
+        #self.worker.threadMessageSender.connect(lambda: self.ui.textBrowser_2.setText(
+        #    open(configurator.config['Folders']['logs'] + '/error' + date_time_day + '.log', 'r').read()))
+        #self.worker.threadMessageSender.connect(lambda: self.ui.textBrowser_3.setText(
+        #    open(configurator.config['Folders']['logs'] + '/download' + date_time_day + '.log', 'r').read()))
         self.worker.threadMessageSender.connect(lambda: self.ui.textBrowser.moveCursor(QTextCursor.End))
         self.worker.threadMessageSender.connect(lambda: self.ui.textBrowser_2.moveCursor(QTextCursor.End))
         self.worker.threadMessageSender.connect(lambda: self.ui.textBrowser_3.moveCursor(QTextCursor.End))
@@ -665,12 +658,12 @@ class MainWindow(QMainWindow):
                                                   | UC.INN.contains(text)
                                                   | UC.OGRN.contains(text)
                                                   | UC.Name.contains(text)
-                                                  | UC.Full_Name.contains(text)).limit(config['Listing']['uc'])
+                                                  | UC.Full_Name.contains(text)).limit(configurator.config['Listing']['uc'])
         count_all = UC.select().where(UC.Registration_Number.contains(text)
                                       | UC.INN.contains(text)
                                       | UC.OGRN.contains(text)
                                       | UC.Name.contains(text)
-                                      | UC.Full_Name.contains(text)).limit(config['Listing']['uc']).count()
+                                      | UC.Full_Name.contains(text)).limit(configurator.config['Listing']['uc']).count()
         self.ui.tableWidget.setRowCount(count_all)
         count = 0
 
@@ -741,19 +734,20 @@ class MainWindow(QMainWindow):
         icon0.addPixmap(pixmap_2)
         self.ui.pushButton_22.setIcon(icon0)
         self.ui.pushButton_22.setFlat(True)
-        self.ui.pushButton_22.pressed.connect(lambda: os.startfile(os.path.realpath(config['Folders']['certs'])))
+        print(configurator.config['Folders']['certs'], os.path.realpath(configurator.config['Folders']['certs']))
+        self.ui.pushButton_22.pressed.connect(lambda: os.startfile(os.path.realpath(configurator.config['Folders']['certs'])))
         self.ui.pushButton_22.setToolTip('Открыть папку с сертами')
 
         query = CERT.select().order_by(order).where(CERT.Registration_Number.contains(text)
                                                     | CERT.Name.contains(text)
                                                     | CERT.KeyId.contains(text)
                                                     | CERT.Stamp.contains(text)
-                                                    | CERT.SerialNumber.contains(text)).limit(config['Listing']['cert'])
+                                                    | CERT.SerialNumber.contains(text)).limit(configurator.config['Listing']['cert'])
         count_all = CERT.select().where(CERT.Registration_Number.contains(text)
                                         | CERT.Name.contains(text)
                                         | CERT.KeyId.contains(text)
                                         | CERT.Stamp.contains(text)
-                                        | CERT.SerialNumber.contains(text)).limit(config['Listing']['cert']).count()
+                                        | CERT.SerialNumber.contains(text)).limit(configurator.config['Listing']['cert']).count()
         self.ui.tableWidget_2.setRowCount(count_all)
         count = 0
         for row in query:
@@ -772,7 +766,7 @@ class MainWindow(QMainWindow):
             button_cert.setFlat(True)
             ki = row.KeyId
             # button_cert.pressed.connect(lambda key_id=ki: open_file(key_id, "cer"))
-            button_cert.pressed.connect(lambda key_id=ki: save_cert(key_id, config['Folders']['certs']))
+            button_cert.pressed.connect(lambda key_id=ki: save_cert(key_id, configurator.config['Folders']['certs']))
             button_cert.setToolTip('Сохранить сертификат')
             self.ui.tableWidget_2.setCellWidget(count, 4, button_cert)
 
@@ -785,7 +779,7 @@ class MainWindow(QMainWindow):
             button_cert_save.setIcon(icon1)
             button_cert_save.setFlat(True)
             ki = row.KeyId
-            button_cert_save.pressed.connect(lambda key_id=ki: save_cert(key_id, config['Folders']['to_uc']))
+            button_cert_save.pressed.connect(lambda key_id=ki: save_cert(key_id, configurator.config['Folders']['to_uc']))
             button_cert_save.setToolTip('Сохранить сертификат в папку УЦ')
             self.ui.tableWidget_2.setCellWidget(count, 5, button_cert_save)
             count = count + 1
@@ -846,7 +840,7 @@ class MainWindow(QMainWindow):
         icon9.addPixmap(pixmap_5)
         self.ui.pushButton_26.setIcon(icon9)
         self.ui.pushButton_26.setFlat(True)
-        self.ui.pushButton_26.pressed.connect(lambda: os.startfile(os.path.realpath(config['Folders']['crls'])))
+        self.ui.pushButton_26.pressed.connect(lambda: os.startfile(os.path.realpath(configurator.config['Folders']['crls'])))
         self.ui.pushButton_26.setToolTip('Открыть папку с CRL')
 
         query = CRL.select().order_by(order).where(CRL.Registration_Number.contains(text)
@@ -854,13 +848,13 @@ class MainWindow(QMainWindow):
                                                    | CRL.KeyId.contains(text)
                                                    | CRL.Stamp.contains(text)
                                                    | CRL.SerialNumber.contains(text)
-                                                   | CRL.UrlCRL.contains(text)).limit(config['Listing']['crl'])
+                                                   | CRL.UrlCRL.contains(text)).limit(configurator.config['Listing']['crl'])
         count_all = CRL.select().where(CRL.Registration_Number.contains(text)
                                        | CRL.Name.contains(text)
                                        | CRL.KeyId.contains(text)
                                        | CRL.Stamp.contains(text)
                                        | CRL.SerialNumber.contains(text)
-                                       | CRL.UrlCRL.contains(text)).limit(config['Listing']['crl']).count()
+                                       | CRL.UrlCRL.contains(text)).limit(configurator.config['Listing']['crl']).count()
         self.ui.tableWidget_3.setRowCount(count_all)
         count = 0
         for row in query:
@@ -878,7 +872,7 @@ class MainWindow(QMainWindow):
             button_crl_save.setIcon(icon4)
             button_crl_save.setFlat(True)
             button_crl_save.pressed.connect(
-                lambda u=row.UrlCRL, s=row.KeyId: download_file(u, s + '.crl', config['Folders']['crls']))
+                lambda u=row.UrlCRL, s=row.KeyId: download_file(u, s + '.crl', configurator.config['Folders']['crls']))
             button_crl_save.setToolTip('Сохранить CRL')
             self.ui.tableWidget_3.setCellWidget(count, 5, button_crl_save)
 
@@ -891,7 +885,7 @@ class MainWindow(QMainWindow):
             button_crl_save_to_uc.setIcon(icon5)
             button_crl_save_to_uc.setFlat(True)
             button_crl_save_to_uc.pressed.connect(
-                lambda u=row.UrlCRL, s=row.KeyId: download_file(u, s + '.crl', config['Folders']['to_uc']))
+                lambda u=row.UrlCRL, s=row.KeyId: download_file(u, s + '.crl', configurator.config['Folders']['to_uc']))
             button_crl_save_to_uc.setToolTip('Сохранить CRL в УЦ')
             self.ui.tableWidget_3.setCellWidget(count, 6, button_crl_save_to_uc)
 
@@ -946,7 +940,7 @@ class MainWindow(QMainWindow):
         icon11.addPixmap(pixmap_18)
         self.ui.pushButton_27.setIcon(icon11)
         self.ui.pushButton_27.setFlat(True)
-        self.ui.pushButton_27.pressed.connect(lambda: os.startfile(os.path.realpath(config['Folders']['crls'])))
+        self.ui.pushButton_27.pressed.connect(lambda: os.startfile(os.path.realpath(configurator.config['Folders']['crls'])))
         self.ui.pushButton_27.setToolTip('Открыть папку с CRL')
         self.worker_2.moveToThread(self.thread_2)
         self.ui.pushButton_5.clicked.connect(self.worker_2.task)
@@ -1012,7 +1006,7 @@ class MainWindow(QMainWindow):
                                                                       | WatchingCRL.Stamp.contains(text)
                                                                       | WatchingCRL.SerialNumber.contains(text)
                                                                       | WatchingCRL.UrlCRL.contains(text)). \
-            limit(config['Listing']['watch'])
+            limit(configurator.config['Listing']['watch'])
         count_all = WatchingCRL.select().where(WatchingCRL.Name.contains(text)
                                                | WatchingCRL.INN.contains(text)
                                                | WatchingCRL.OGRN.contains(text)
@@ -1020,7 +1014,7 @@ class MainWindow(QMainWindow):
                                                | WatchingCRL.Stamp.contains(text)
                                                | WatchingCRL.SerialNumber.contains(text)
                                                | WatchingCRL.UrlCRL.contains(text)).limit(
-            config['Listing']['watch']).count()
+            configurator.config['Listing']['watch']).count()
         self.ui.tableWidget_4.setRowCount(count_all)
         count = 0
         brush = QBrush(QColor(0, 255, 0, 255))
@@ -1149,7 +1143,7 @@ class MainWindow(QMainWindow):
                    | WatchingCustomCRL.Stamp.contains(text)
                    | WatchingCustomCRL.SerialNumber.contains(text)
                    | WatchingCustomCRL.UrlCRL.contains(text)). \
-            limit(config['Listing']['watch'])
+            limit(configurator.config['Listing']['watch'])
         count_all = WatchingCustomCRL.select().where(WatchingCustomCRL.Name.contains(text)
                                                      | WatchingCustomCRL.INN.contains(text)
                                                      | WatchingCustomCRL.OGRN.contains(text)
@@ -1157,7 +1151,7 @@ class MainWindow(QMainWindow):
                                                      | WatchingCustomCRL.Stamp.contains(text)
                                                      | WatchingCustomCRL.SerialNumber.contains(text)
                                                      | WatchingCustomCRL.UrlCRL.contains(text)). \
-            limit(config['Listing']['watch']).count()
+            limit(configurator.config['Listing']['watch']).count()
         # self.ui.tableWidget_5.clear()
         self.ui.tableWidget_5.setRowCount(count_all)
         count = 0
@@ -1289,7 +1283,7 @@ class MainWindow(QMainWindow):
                   | WatchingDeletedCRL.Stamp.contains(text)
                   | WatchingDeletedCRL.SerialNumber.contains(text)
                   | WatchingDeletedCRL.UrlCRL.contains(text)). \
-            limit(config['Listing']['watch'])
+            limit(configurator.config['Listing']['watch'])
         count_all = WatchingDeletedCRL.select().where(WatchingDeletedCRL.Name.contains(text)
                                                       | WatchingDeletedCRL.INN.contains(text)
                                                       | WatchingDeletedCRL.OGRN.contains(text)
@@ -1297,7 +1291,7 @@ class MainWindow(QMainWindow):
                                                       | WatchingDeletedCRL.Stamp.contains(text)
                                                       | WatchingDeletedCRL.SerialNumber.contains(text)
                                                       | WatchingDeletedCRL.UrlCRL.contains(text)). \
-            limit(config['Listing']['watch']).count()
+            limit(configurator.config['Listing']['watch']).count()
         self.ui.tableWidget_6.setRowCount(count_all)
         count = 0
         for row in query:
@@ -1332,74 +1326,74 @@ class MainWindow(QMainWindow):
 
     def init_settings(self):
         # main config
-        self.ui.lineEdit_13.setText(config['Tabs']['ucLimit'])
-        self.ui.lineEdit_18.setText(config['Tabs']['certLimit'])
-        self.ui.lineEdit_17.setText(config['Tabs']['crlLimit'])
-        self.ui.lineEdit_16.setText(config['Tabs']['wcLimit'])
-        self.ui.lineEdit_15.setText(config['Tabs']['wccLimit'])
-        self.ui.lineEdit_14.setText(config['Tabs']['wcdLimit'])
-        self.ui.lineEdit_19.setText(config['XMPP']['server'])
-        self.ui.lineEdit_20.setText(config['XMPP']['login'])
-        self.ui.lineEdit_21.setText(config['XMPP']['password'])
-        self.ui.lineEdit_22.setText(config['XMPP']['tosend'])
-        self.ui.lineEdit_23.setText(config['Update']['deltaupdateinday'])
-        self.ui.lineEdit_24.setText(config['Update']['timebeforeupdate'])
-        self.ui.lineEdit_25.setText(config['Update']['self_uc_ogrn'])
-        self.ui.lineEdit_26.setText(config['Update']['main_uc_ogrn'])
+        self.ui.lineEdit_13.setText(configurator.config['Tabs']['ucLimit'])
+        self.ui.lineEdit_18.setText(configurator.config['Tabs']['certLimit'])
+        self.ui.lineEdit_17.setText(configurator.config['Tabs']['crlLimit'])
+        self.ui.lineEdit_16.setText(configurator.config['Tabs']['wcLimit'])
+        self.ui.lineEdit_15.setText(configurator.config['Tabs']['wccLimit'])
+        self.ui.lineEdit_14.setText(configurator.config['Tabs']['wcdLimit'])
+        self.ui.lineEdit_19.setText(configurator.config['XMPP']['server'])
+        self.ui.lineEdit_20.setText(configurator.config['XMPP']['login'])
+        self.ui.lineEdit_21.setText(configurator.config['XMPP']['password'])
+        self.ui.lineEdit_22.setText(configurator.config['XMPP']['tosend'])
+        self.ui.lineEdit_23.setText(configurator.config['Update']['deltaupdateinday'])
+        self.ui.lineEdit_24.setText(configurator.config['Update']['timebeforeupdate'])
+        self.ui.lineEdit_25.setText(configurator.config['Update']['self_uc_ogrn'])
+        self.ui.lineEdit_26.setText(configurator.config['Update']['main_uc_ogrn'])
 
-        if config['XMPP']['sendinfoerr'] == 'Yes':
+        if configurator.config['XMPP']['sendinfoerr'] == 'Yes':
             self.ui.checkBox_10.setChecked(True)
-        if config['XMPP']['sendinfonewcrl'] == 'Yes':
+        if configurator.config['XMPP']['sendinfonewcrl'] == 'Yes':
             self.ui.checkBox_9.setChecked(True)
-        if config['XMPP']['sendinfonewtsl'] == 'Yes':
+        if configurator.config['XMPP']['sendinfonewtsl'] == 'Yes':
             self.ui.checkBox_11.setChecked(True)
 
-        if config['Sec']['allowImportCRL'] == 'Yes':
+        if configurator.config['Sec']['allowImportCRL'] == 'Yes':
             self.ui.checkBox_4.setChecked(True)
         else:
             self.ui.pushButton_6.setDisabled(True)
-        if config['Sec']['allowExportCRL'] == 'Yes':
+        if configurator.config['Sec']['allowExportCRL'] == 'Yes':
             self.ui.checkBox_5.setChecked(True)
         else:
             self.ui.pushButton_13.setDisabled(True)
-        if config['Sec']['allowDeleteWatchingCRL'] == 'Yes':
+        if configurator.config['Sec']['allowDeleteWatchingCRL'] == 'Yes':
             self.ui.checkBox_6.setChecked(True)
             # self.ui.pushButton_X.setDisabled(True)
-        if config['Sec']['allowDownloadButtonCRL'] == 'Yes':
+        if configurator.config['Sec']['allowDownloadButtonCRL'] == 'Yes':
             self.ui.checkBox_7.setChecked(True)
         else:
             self.ui.pushButton_4.setDisabled(True)
-        if config['Sec']['allowCheckButtonCRL'] == 'Yes':
+        if configurator.config['Sec']['allowCheckButtonCRL'] == 'Yes':
             self.ui.checkBox_8.setChecked(True)
         else:
             self.ui.pushButton_5.setDisabled(True)
 
         # Sub  config
-        self.ui.lineEdit_12.setText(config['MainWindow']['height'])
-        self.ui.lineEdit_11.setText(config['MainWindow']['width'])
-        self.resize(int(config['MainWindow']['width']), int(config['MainWindow']['height']))
-        if config['MainWindow']['savewidth'] == 'No':
+        self.ui.lineEdit_12.setText(configurator.config['MainWindow']['height'])
+        self.ui.lineEdit_11.setText(configurator.config['MainWindow']['width'])
+        self.resize(int(configurator.config['MainWindow']['width']), int(configurator.config['MainWindow']['height']))
+        if configurator.config['MainWindow']['savewidth'] == 'No':
             self.ui.checkBox_2.setChecked(True)
-        if config['MainWindow']['allowresize'] == 'Yes':
+        if configurator.config['MainWindow']['allowresize'] == 'Yes':
             self.ui.checkBox_3.setChecked(True)
-            self.resize(int(config['MainWindow']['width']), int(config['MainWindow']['height']))
-            self.setMinimumSize(int(config['MainWindow']['width']), int(config['MainWindow']['height']))
-            self.setMaximumSize(int(config['MainWindow']['width']), int(config['MainWindow']['height']))
+            self.resize(int(configurator.config['MainWindow']['width']), int(configurator.config['MainWindow']['height']))
+            self.setMinimumSize(int(configurator.config['MainWindow']['width']), int(configurator.config['MainWindow']['height']))
+            self.setMaximumSize(int(configurator.config['MainWindow']['width']), int(configurator.config['MainWindow']['height']))
 
-        self.ui.comboBox.setCurrentText(config['Logs']['loglevel'])
-        self.ui.spinBox.setValue(int(config['Logs']['dividelogsbysize']))
-        if config['Logs']['dividelogsbyday'] == 'Yes':
+        self.ui.comboBox.setCurrentText(configurator.config['Logs']['loglevel'])
+        self.ui.spinBox.setValue(int(configurator.config['Logs']['dividelogsbysize']))
+        if configurator.config['Logs']['dividelogsbyday'] == 'Yes':
             self.ui.checkBox_14.setChecked(True)
-        if config['Schedule']['allowupdatecrlbystart'] == 'Yes':
+        if configurator.config['Schedule']['allowupdatecrlbystart'] == 'Yes':
             self.ui.checkBox_12.setChecked(True)
-        if config['Schedule']['allowupdatetslbystart'] == 'Yes':
+        if configurator.config['Schedule']['allowupdatetslbystart'] == 'Yes':
             self.ui.checkBox_13.setChecked(True)
         # download config
-        self.ui.label_13.setText(config['Folders']['crls'])
-        self.ui.label_12.setText(config['Folders']['certs'])
-        self.ui.label_11.setText(config['Folders']['uc'])
-        self.ui.label_10.setText(config['Folders']['tmp'])
-        self.ui.label_9.setText(config['Folders']['to_uc'])
+        self.ui.label_13.setText(configurator.config['Folders']['crls'])
+        self.ui.label_12.setText(configurator.config['Folders']['certs'])
+        self.ui.label_11.setText(configurator.config['Folders']['uc'])
+        self.ui.label_10.setText(configurator.config['Folders']['tmp'])
+        self.ui.label_9.setText(configurator.config['Folders']['to_uc'])
 
         self.ui.pushButton_18.clicked.connect(lambda: self.choose_directory('crl'))
         self.ui.pushButton_18.setToolTip('Папка загрузки CRL')
@@ -1412,18 +1406,18 @@ class MainWindow(QMainWindow):
         self.ui.pushButton_14.clicked.connect(lambda: self.choose_directory('to_uc'))
         self.ui.pushButton_14.setToolTip('Папка загрузки в УЦ')
 
-        self.ui.lineEdit_7.setText(config['Proxy']['ip'])
-        self.ui.lineEdit_8.setText(config['Proxy']['port'])
-        self.ui.lineEdit_9.setText(config['Proxy']['login'])
-        self.ui.lineEdit_10.setText(config['Proxy']['password'])
+        self.ui.lineEdit_7.setText(configurator.config['Proxy']['ip'])
+        self.ui.lineEdit_8.setText(configurator.config['Proxy']['port'])
+        self.ui.lineEdit_9.setText(configurator.config['Proxy']['login'])
+        self.ui.lineEdit_10.setText(configurator.config['Proxy']['password'])
 
-        if config['Proxy']['proxyon'] == 'No':
+        if configurator.config['Proxy']['proxyon'] == 'No':
             self.ui.checkBox.setChecked(False)
             self.ui.lineEdit_7.setDisabled(True)
             self.ui.lineEdit_8.setDisabled(True)
             self.ui.lineEdit_9.setDisabled(True)
             self.ui.lineEdit_10.setDisabled(True)
-        elif config['Proxy']['proxyon'] == 'Yes':
+        elif configurator.config['Proxy']['proxyon'] == 'Yes':
             self.ui.checkBox.setChecked(True)
             self.ui.lineEdit_7.setEnabled(True)
             self.ui.lineEdit_8.setEnabled(True)
@@ -1431,202 +1425,149 @@ class MainWindow(QMainWindow):
             self.ui.lineEdit_10.setEnabled(True)
 
         # Logs
-        if config['Logs']['dividelogsbyday'] == 'Yes':
+        if configurator.config['Logs']['dividelogsbyday'] == 'Yes':
             date_time_day = '_' + datetime.datetime.now().strftime('%Y%m%d')
         else:
             date_time_day = ''
-        if os.path.exists(config['Folders']['logs'] + '/log' + date_time_day + '.log'):
+        if os.path.exists(configurator.config['Folders']['logs'] + '/log' + date_time_day + '.log'):
             self.ui.textBrowser.setText(
-                open(config['Folders']['logs'] + '/log' + date_time_day + '.log', 'r').read())
+                open(configurator.config['Folders']['logs'] + '/log' + date_time_day + '.log', 'r').read())
 
-        if os.path.exists(config['Folders']['logs'] + '/error' + date_time_day + '.log'):
+        if os.path.exists(configurator.config['Folders']['logs'] + '/error' + date_time_day + '.log'):
             self.ui.textBrowser_2.setText(
-                open(config['Folders']['logs'] + '/error' + date_time_day + '.log', 'r').read())
+                open(configurator.config['Folders']['logs'] + '/error' + date_time_day + '.log', 'r').read())
 
-        if os.path.exists(config['Folders']['logs'] + '/download' + date_time_day + '.log'):
+        if os.path.exists(configurator.config['Folders']['logs'] + '/download' + date_time_day + '.log'):
             self.ui.textBrowser_3.setText(
-                open(config['Folders']['logs'] + '/download' + date_time_day + '.log', 'r').read())
+                open(configurator.config['Folders']['logs'] + '/download' + date_time_day + '.log', 'r').read())
 
         self.ui.pushButton_21.pressed.connect(lambda: self.save_settings_main())
         self.ui.pushButton_23.pressed.connect(lambda: self.save_settings_sub())
 
     def save_settings_main(self):
-        set_value_in_property_file('settings.ini', 'Tabs', 'ucLimit', self.ui.lineEdit_13.text())
-        config.set('Tabs', 'ucLimit', self.ui.lineEdit_13.text())
-        set_value_in_property_file('settings.ini', 'Tabs', 'certLimit', self.ui.lineEdit_18.text())
-        config.set('Tabs', 'certLimit', self.ui.lineEdit_18.text())
-        set_value_in_property_file('settings.ini', 'Tabs', 'crlLimit', self.ui.lineEdit_17.text())
-        config.set('Tabs', 'crlLimit', self.ui.lineEdit_17.text())
-        set_value_in_property_file('settings.ini', 'Tabs', 'wcLimit', self.ui.lineEdit_16.text())
-        config.set('Tabs', 'wcLimit', self.ui.lineEdit_16.text())
-        set_value_in_property_file('settings.ini', 'Tabs', 'wccLimit', self.ui.lineEdit_15.text())
-        config.set('Tabs', 'wccLimit', self.ui.lineEdit_15.text())
-        set_value_in_property_file('settings.ini', 'Tabs', 'wcdLimit', self.ui.lineEdit_14.text())
-        config.set('Tabs', 'wcdLimit', self.ui.lineEdit_14.text())
-        set_value_in_property_file('settings.ini', 'MainWindow', 'height', self.ui.lineEdit_12.text())
-        config.set('MainWindow', 'height', self.ui.lineEdit_12.text())
-        set_value_in_property_file('settings.ini', 'MainWindow', 'width', self.ui.lineEdit_11.text())
-        config.set('MainWindow', 'width', self.ui.lineEdit_11.text())
-        set_value_in_property_file('settings.ini', 'XMPP', 'server', self.ui.lineEdit_19.text())
-        config.set('XMPP', 'server', self.ui.lineEdit_19.text())
-        set_value_in_property_file('settings.ini', 'XMPP', 'login', self.ui.lineEdit_20.text())
-        config.set('XMPP', 'login', self.ui.lineEdit_20.text())
-        set_value_in_property_file('settings.ini', 'XMPP', 'password', self.ui.lineEdit_21.text())
-        config.set('XMPP', 'password', self.ui.lineEdit_21.text())
-        set_value_in_property_file('settings.ini', 'XMPP', 'tosend', self.ui.lineEdit_22.text())
-        config.set('XMPP', 'tosend', self.ui.lineEdit_22.text())
-        set_value_in_property_file('settings.ini', 'Update', 'deltaupdateinday', self.ui.lineEdit_23.text())
-        config.set('Update', 'deltaupdateinday', self.ui.lineEdit_23.text())
-        set_value_in_property_file('settings.ini', 'Update', 'timebeforeupdate', self.ui.lineEdit_24.text())
-        config.set('Update', 'timebeforeupdate', self.ui.lineEdit_24.text())
+        configurator.set_value_in_property_file('settings.ini', 'Tabs', 'ucLimit', self.ui.lineEdit_13.text())
+        configurator.set_value_in_property_file('settings.ini', 'Tabs', 'certLimit', self.ui.lineEdit_18.text())
+        configurator.set_value_in_property_file('settings.ini', 'Tabs', 'crlLimit', self.ui.lineEdit_17.text())
+        configurator.set_value_in_property_file('settings.ini', 'Tabs', 'wcLimit', self.ui.lineEdit_16.text())
+        configurator.set_value_in_property_file('settings.ini', 'Tabs', 'wccLimit', self.ui.lineEdit_15.text())
+        configurator.set_value_in_property_file('settings.ini', 'Tabs', 'wcdLimit', self.ui.lineEdit_14.text())
+        configurator.set_value_in_property_file('settings.ini', 'MainWindow', 'height', self.ui.lineEdit_12.text())
+        configurator.set_value_in_property_file('settings.ini', 'MainWindow', 'width', self.ui.lineEdit_11.text())
+        configurator.set_value_in_property_file('settings.ini', 'XMPP', 'server', self.ui.lineEdit_19.text())
+        configurator.set_value_in_property_file('settings.ini', 'XMPP', 'login', self.ui.lineEdit_20.text())
+        configurator.set_value_in_property_file('settings.ini', 'XMPP', 'password', self.ui.lineEdit_21.text())
+        configurator.set_value_in_property_file('settings.ini', 'XMPP', 'tosend', self.ui.lineEdit_22.text())
+        configurator.set_value_in_property_file('settings.ini', 'Update', 'deltaupdateinday', self.ui.lineEdit_23.text())
+        configurator.set_value_in_property_file('settings.ini', 'Update', 'timebeforeupdate', self.ui.lineEdit_24.text())
 
         if self.ui.checkBox_10.checkState() == 0:
-            set_value_in_property_file('settings.ini', 'XMPP', 'sendinfoerr', 'No')
-            config.set('XMPP', 'sendinfoerr', 'No')
+            configurator.set_value_in_property_file('settings.ini', 'XMPP', 'sendinfoerr', 'No')
         elif self.ui.checkBox_10.checkState() == 2:
-            set_value_in_property_file('settings.ini', 'XMPP', 'sendinfoerr', 'Yes')
-            config.set('XMPP', 'sendinfoerr', 'Yes')
+            configurator.set_value_in_property_file('settings.ini', 'XMPP', 'sendinfoerr', 'Yes')
         if self.ui.checkBox_9.checkState() == 0:
-            set_value_in_property_file('settings.ini', 'XMPP', 'sendinfonewcrl', 'No')
-            config.set('XMPP', 'sendinfonewcrl', 'No')
+            configurator.set_value_in_property_file('settings.ini', 'XMPP', 'sendinfonewcrl', 'No')
         elif self.ui.checkBox_9.checkState() == 2:
-            set_value_in_property_file('settings.ini', 'XMPP', 'sendinfonewcrl', 'Yes')
-            config.set('XMPP', 'sendinfonewcrl', 'Yes')
+            configurator.set_value_in_property_file('settings.ini', 'XMPP', 'sendinfonewcrl', 'Yes')
         if self.ui.checkBox_11.checkState() == 0:
-            set_value_in_property_file('settings.ini', 'XMPP', 'sendinfonewtsl', 'No')
-            config.set('XMPP', 'sendinfonewtsl', 'No')
+            configurator.set_value_in_property_file('settings.ini', 'XMPP', 'sendinfonewtsl', 'No')
         elif self.ui.checkBox_11.checkState() == 2:
-            set_value_in_property_file('settings.ini', 'XMPP', 'sendinfonewtsl', 'Yes')
-            config.set('XMPP', 'sendinfonewtsl', 'Yes')
-
+            configurator.set_value_in_property_file('settings.ini', 'XMPP', 'sendinfonewtsl', 'Yes')
+  
         if self.ui.checkBox_3.checkState() == 0:
-            set_value_in_property_file('settings.ini', 'MainWindow', 'allowresize', 'No')
-            config.set('MainWindow', 'allowresize', 'Yes')
-            self.resize(int(config['MainWindow']['width']), int(config['MainWindow']['height']))
+            configurator.set_value_in_property_file('settings.ini', 'MainWindow', 'allowresize', 'No')
+            self.resize(int(configurator.config['MainWindow']['width']), int(configurator.config['MainWindow']['height']))
             self.setMinimumSize(0, 0)
             self.setMaximumSize(16777215, 16777215)
         elif self.ui.checkBox_3.checkState() == 2:
-            set_value_in_property_file('settings.ini', 'MainWindow', 'allowresize', 'Yes')
-            config.set('MainWindow', 'allowresize', 'No')
-            self.resize(int(config['MainWindow']['width']), int(config['MainWindow']['height']))
-            self.setMinimumSize(int(config['MainWindow']['width']), int(config['MainWindow']['height']))
-            self.setMaximumSize(int(config['MainWindow']['width']), int(config['MainWindow']['height']))
+            configurator.set_value_in_property_file('settings.ini', 'MainWindow', 'allowresize', 'Yes')
+            self.resize(int(configurator.config['MainWindow']['width']), int(configurator.config['MainWindow']['height']))
+            self.setMinimumSize(int(configurator.config['MainWindow']['width']), int(configurator.config['MainWindow']['height']))
+            self.setMaximumSize(int(configurator.config['MainWindow']['width']), int(configurator.config['MainWindow']['height']))
 
         if self.ui.checkBox_2.checkState() == 0:
-            set_value_in_property_file('settings.ini', 'MainWindow', 'savewidth', 'Yes')
-            config.set('MainWindow', 'savewidth', 'No')
+            configurator.set_value_in_property_file('settings.ini', 'MainWindow', 'savewidth', 'Yes')
         elif self.ui.checkBox_2.checkState() == 2:
-            set_value_in_property_file('settings.ini', 'MainWindow', 'savewidth', 'No')
-            config.set('MainWindow', 'savewidth', 'Yes')
+            configurator.set_value_in_property_file('settings.ini', 'MainWindow', 'savewidth', 'No')
 
         if self.ui.checkBox_4.checkState() == 0:
-            set_value_in_property_file('settings.ini', 'Sec', 'allowImportCRL', 'No')
-            config.set('Sec', 'allowImportCRL', 'No')
+            configurator.set_value_in_property_file('settings.ini', 'Sec', 'allowImportCRL', 'No')
             self.ui.pushButton_6.setDisabled(True)
         elif self.ui.checkBox_4.checkState() == 2:
-            set_value_in_property_file('settings.ini', 'Sec', 'allowImportCRL', 'Yes')
-            config.set('Sec', 'allowImportCRL', 'Yes')
+            configurator.set_value_in_property_file('settings.ini', 'Sec', 'allowImportCRL', 'Yes')
             self.ui.pushButton_6.setEnabled(True)
         if self.ui.checkBox_5.checkState() == 0:
-            set_value_in_property_file('settings.ini', 'Sec', 'allowExportCRL', 'No')
-            config.set('Sec', 'allowExportCRL', 'No')
+            configurator.set_value_in_property_file('settings.ini', 'Sec', 'allowExportCRL', 'No')
             self.ui.pushButton_13.setDisabled(True)
         elif self.ui.checkBox_5.checkState() == 2:
-            set_value_in_property_file('settings.ini', 'Sec', 'allowExportCRL', 'Yes')
-            config.set('Sec', 'allowExportCRL', 'Yes')
+            configurator.set_value_in_property_file('settings.ini', 'Sec', 'allowExportCRL', 'Yes')
             self.ui.pushButton_13.setEnabled(True)
         if self.ui.checkBox_6.checkState() == 0:
-            set_value_in_property_file('settings.ini', 'Sec', 'allowDeleteWatchingCRL', 'No')
-            config.set('Sec', 'allowDeleteWatchingCRL', 'No')
+            configurator.set_value_in_property_file('settings.ini', 'Sec', 'allowDeleteWatchingCRL', 'No')
         elif self.ui.checkBox_6.checkState() == 2:
-            set_value_in_property_file('settings.ini', 'Sec', 'allowDeleteWatchingCRL', 'Yes')
-            config.set('Sec', 'allowDeleteWatchingCRL', 'Yes')
+            configurator.set_value_in_property_file('settings.ini', 'Sec', 'allowDeleteWatchingCRL', 'Yes')
         if self.ui.checkBox_7.checkState() == 0:
-            set_value_in_property_file('settings.ini', 'Sec', 'allowDownloadButtonCRL', 'No')
-            config.set('Sec', 'allowDownloadButtonCRL', 'No')
+            configurator.set_value_in_property_file('settings.ini', 'Sec', 'allowDownloadButtonCRL', 'No')
             self.ui.pushButton_4.setDisabled(True)
         elif self.ui.checkBox_7.checkState() == 2:
-            set_value_in_property_file('settings.ini', 'Sec', 'allowDownloadButtonCRL', 'Yes')
-            config.set('Sec', 'allowDownloadButtonCRL', 'Yes')
+            configurator.set_value_in_property_file('settings.ini', 'Sec', 'allowDownloadButtonCRL', 'Yes')
             self.ui.pushButton_4.setEnabled(True)
         if self.ui.checkBox_8.checkState() == 0:
-            set_value_in_property_file('settings.ini', 'Sec', 'allowCheckButtonCRL', 'No')
-            config.set('Sec', 'allowCheckButtonCRL', 'No')
+            configurator.set_value_in_property_file('settings.ini', 'Sec', 'allowCheckButtonCRL', 'No')
             self.ui.pushButton_5.setDisabled(True)
         elif self.ui.checkBox_8.checkState() == 2:
-            set_value_in_property_file('settings.ini', 'Sec', 'allowCheckButtonCRL', 'Yes')
-            config.set('Sec', 'allowCheckButtonCRL', 'Yes')
+            configurator.set_value_in_property_file('settings.ini', 'Sec', 'allowCheckButtonCRL', 'Yes')
             self.ui.pushButton_5.setEnabled(True)
         self.ui.label_27.setText('Настройки сохранены')
         print('Info: save_settings_main::Saved')
-        logs('Info: save_settings_main::Saved', 'info', '6')
+        configurator.downlog.info('Save_settings_main::Saved')
 
     def save_settings_sub(self):
-        set_value_in_property_file('settings.ini', 'Folders', 'certs', self.ui.label_12.text())
-        config.set('Folders', 'certs', self.ui.label_12.text())
-        set_value_in_property_file('settings.ini', 'Folders', 'crls', self.ui.label_13.text())
-        config.set('Folders', 'crls', self.ui.label_13.text())
-        set_value_in_property_file('settings.ini', 'Folders', 'tmp', self.ui.label_10.text())
-        config.set('Folders', 'tmp', self.ui.label_10.text())
-        set_value_in_property_file('settings.ini', 'Folders', 'uc', self.ui.label_11.text())
-        config.set('Folders', 'uc', self.ui.label_11.text())
-        set_value_in_property_file('settings.ini', 'Folders', 'to_uc', self.ui.label_9.text())
-        config.set('Folders', 'to_uc', self.ui.label_9.text())
+        configurator.set_value_in_property_file('settings.ini', 'Folders', 'certs', self.ui.label_12.text())
+        configurator.set_value_in_property_file('settings.ini', 'Folders', 'crls', self.ui.label_13.text())
+        configurator.set_value_in_property_file('settings.ini', 'Folders', 'tmp', self.ui.label_10.text())
+        configurator.set_value_in_property_file('settings.ini', 'Folders', 'uc', self.ui.label_11.text())
+        configurator.set_value_in_property_file('settings.ini', 'Folders', 'to_uc', self.ui.label_9.text())
 
-        set_value_in_property_file('settings.ini', 'Proxy', 'ip', self.ui.lineEdit_7.text())
-        config['Proxy']['ip'] = self.ui.lineEdit_7.text()
-        config.set('Schedule', 'allowupdatecrlbystart', 'No')
-        set_value_in_property_file('settings.ini', 'Proxy', 'port', self.ui.lineEdit_8.text())
-        config['Proxy']['port'] = self.ui.lineEdit_8.text()
-        config.set('Schedule', 'allowupdatecrlbystart', 'No')
-        set_value_in_property_file('settings.ini', 'Proxy', 'login', self.ui.lineEdit_9.text())
-        config['Proxy']['login'] = self.ui.lineEdit_9.text()
-        config.set('Schedule', 'allowupdatecrlbystart', 'No')
-        set_value_in_property_file('settings.ini', 'Proxy', 'password', self.ui.lineEdit_10.text())
-        config['Proxy']['password'] = self.ui.lineEdit_10.text()
-        config.set('Schedule', 'allowupdatecrlbystart', 'No')
+        configurator.set_value_in_property_file('settings.ini', 'Proxy', 'ip', self.ui.lineEdit_7.text())
+        configurator.config['Proxy']['ip'] = self.ui.lineEdit_7.text()
+        configurator.set_value_in_property_file('settings.ini', 'Proxy', 'port', self.ui.lineEdit_8.text())
+        configurator.config['Proxy']['port'] = self.ui.lineEdit_8.text()
+        configurator.set_value_in_property_file('settings.ini', 'Proxy', 'login', self.ui.lineEdit_9.text())
+        configurator.config['Proxy']['login'] = self.ui.lineEdit_9.text()
+        configurator.set_value_in_property_file('settings.ini', 'Proxy', 'password', self.ui.lineEdit_10.text())
+        configurator.config['Proxy']['password'] = self.ui.lineEdit_10.text()
 
         if self.ui.checkBox_12.checkState() == 0:
-            set_value_in_property_file('settings.ini', 'Schedule', 'allowupdatecrlbystart', 'No')
-            config.set('Schedule', 'allowupdatecrlbystart', 'No')
+            configurator.set_value_in_property_file('settings.ini', 'Schedule', 'allowupdatecrlbystart', 'No')
         elif self.ui.checkBox_12.checkState() == 2:
-            set_value_in_property_file('settings.ini', 'Schedule', 'allowupdatecrlbystart', 'Yes')
-            config.set('Schedule', 'allowupdatecrlbystart', 'Yes')
+            configurator.set_value_in_property_file('settings.ini', 'Schedule', 'allowupdatecrlbystart', 'Yes')
         if self.ui.checkBox_13.checkState() == 0:
-            set_value_in_property_file('settings.ini', 'Schedule', 'allowupdatetslbystart', 'No')
-            config.set('Schedule', 'allowupdatetslbystart', 'No')
+            configurator.set_value_in_property_file('settings.ini', 'Schedule', 'allowupdatetslbystart', 'No')
         elif self.ui.checkBox_13.checkState() == 2:
-            set_value_in_property_file('settings.ini', 'Schedule', 'allowupdatetslbystart', 'Yes')
-            config.set('Schedule', 'allowupdatetslbystart', 'Yes')
+            configurator.set_value_in_property_file('settings.ini', 'Schedule', 'allowupdatetslbystart', 'Yes')
 
         if self.ui.checkBox.checkState() == 0:
-            set_value_in_property_file('settings.ini', 'Proxy', 'proxyon', 'No')
-            config.set('Proxy', 'proxyon', 'No')
+            configurator.set_value_in_property_file('settings.ini', 'Proxy', 'proxyon', 'No')
             self.ui.lineEdit_7.setDisabled(True)
             self.ui.lineEdit_8.setDisabled(True)
             self.ui.lineEdit_9.setDisabled(True)
             self.ui.lineEdit_10.setDisabled(True)
         elif self.ui.checkBox.checkState() == 2:
-            set_value_in_property_file('settings.ini', 'Proxy', 'proxyon', 'Yes')
-            config.set('Proxy', 'proxyon', 'Yes')
+            configurator.set_value_in_property_file('settings.ini', 'Proxy', 'proxyon', 'Yes')
             self.ui.lineEdit_7.setEnabled(True)
             self.ui.lineEdit_8.setEnabled(True)
             self.ui.lineEdit_9.setEnabled(True)
             self.ui.lineEdit_10.setEnabled(True)
 
-        set_value_in_property_file('settings.ini', 'Logs', 'loglevel', self.ui.comboBox.currentText())
-        config.set('Logs', 'loglevel', self.ui.comboBox.currentText())
-        set_value_in_property_file('settings.ini', 'Logs', 'dividelogsbysize', str(self.ui.spinBox.value()))
-        config.set('Logs', 'dividelogsbysize', str(self.ui.spinBox.value()))
+        configurator.set_value_in_property_file('settings.ini', 'Logs', 'loglevel', self.ui.comboBox.currentText())
+        configurator.set_value_in_property_file('settings.ini', 'Logs', 'dividelogsbysize', str(self.ui.spinBox.value()))
         if self.ui.checkBox_14.checkState() == 0:
-            set_value_in_property_file('settings.ini', 'Logs', 'dividelogsbyday', 'No')
-            config.set('Logs', 'dividelogsbyday', 'No')
+            configurator.set_value_in_property_file('settings.ini', 'Logs', 'dividelogsbyday', 'No')
         elif self.ui.checkBox_14.checkState() == 2:
-            set_value_in_property_file('settings.ini', 'Logs', 'dividelogsbyday', 'Yes')
-            config.set('Logs', 'dividelogsbyday', 'Yes')
+            configurator.set_value_in_property_file('settings.ini', 'Logs', 'dividelogsbyday', 'Yes')
         self.ui.label_28.setText('Настройки сохранены')
         print('Info: save_settings_sub::Saved')
-        logs('Info: save_settings_sub::Saved', 'info', '6')
+        configurator.downlog.info('Save_settings_sub::Saved')
 
     def init_xml(self):
         self.ui.pushButton_2.setEnabled(False)
@@ -1638,7 +1579,7 @@ class MainWindow(QMainWindow):
         CERT.create_table()
         CRL.create_table()
         self.ui.label_7.setText('Обрабатываем данные.')
-        logs('Info: Init TLS started', 'info', '5')
+        configurator.downlog.info('Init TLS started')
         with open('tsl.xml', "rt", encoding="utf-8") as obj:
             xml = obj.read().encode()
 
@@ -1746,7 +1687,7 @@ class MainWindow(QMainWindow):
             if registration_number != '':
                 self.ui.label_7.setText('Обрабатываем данные: ' + name)
                 print(name)
-                logs('Info: Processing - UC:' + name, 'info', '6')
+                configurator.downlog.info('Processing - UC:' + name)
                 uc = UC(Registration_Number=registration_number,
                         INN=inn,
                         OGRN=ogrn,
@@ -1810,7 +1751,7 @@ class MainWindow(QMainWindow):
         self.ui.pushButton.setEnabled(True)
         self.ui.pushButton_2.setEnabled(True)
         self.ui.label_7.setText('Готово.')
-        logs('Info: Processing successful done', 'info', '6')
+        configurator.downlog.info('Processing successful done')
         self.ui.progressBar_2.setMaximum(-1)
 
     def open_sub_window_info_uc(self, reg_number):
@@ -1891,15 +1832,15 @@ class MainWindow(QMainWindow):
                 self.ui.label_24.setText('Проводится проверка')
                 if check_crl(add_to_watching_crl.ID, row.Name, keyid, url_crl) == 'down_error':
                     print('Warning: add_watch_current_crl::crl_added_error:down_error:' + keyid)
-                    logs('Warning: add_watch_current_crl::crl_added_error:down_error:' + keyid, 'warn', '4')
+                    configurator.downlog.warning('Add_watch_current_crl::crl_added_error:down_error:' + keyid)
                     self.ui.label_24.setText('Ошибка добавления, невозможно скачать файл, проверьте источник')
                 else:
                     print('Info: add_watch_current_crl::crl_added:' + keyid)
-                    logs('Info: add_watch_current_crl::crl_added:' + keyid, 'info', '7')
+                    configurator.downlog.info('Info: add_watch_current_crl::crl_added:' + keyid)
                     self.ui.label_24.setText('CRL ' + keyid + ' добавлен в список отлеживания')
         else:
             print('Info: add_watch_current_crl::crl_exist:' + keyid)
-            logs('Info: add_watch_current_crl::crl_exist:' + keyid, 'info', '7')
+            configurator.downlog.info('Info: add_watch_current_crl::crl_exist:' + keyid)
             self.ui.label_24.setText('CRL ' + keyid + ' уже находится в списке отслеживания')
 
     def add_watch_custom_crl(self, url_crl):
@@ -1915,10 +1856,10 @@ class MainWindow(QMainWindow):
             add_to_watching_crl.save()
             self.counter_added_custom = self.counter_added_custom + 1
             print('Info: add_watch_custom_crl::crl_added:' + url_crl)
-            logs('Info: add_watch_custom_crl::crl_added:' + url_crl, 'info', '7')
+            configurator.downlog.info('Info: add_watch_custom_crl::crl_added:' + url_crl,)
         else:
             print('Info: add_watch_custom_crl::crl_exist:' + url_crl)
-            logs('Info: add_watch_custom_crl::crl_exist:' + url_crl, 'info', '7')
+            configurator.downlog.info('Info: add_watch_custom_crl::crl_exist:' + url_crl)
             self.counter_added_exist = self.counter_added_exist + 1
         self.on_changed_find_watching_crl('')
 
@@ -1967,7 +1908,7 @@ class MainWindow(QMainWindow):
             self.sub_tab_watching_crl()
             self.sub_tab_watching_disabled_crl()
             print('Info: move_watching_to_passed()::moving_success_current:')
-            logs('Info: move_watching_to_passed()::moving_success_current:', 'info', '7')
+            configurator.downlog.info('Info: move_watching_to_passed()::moving_success_current:')
         elif from_var == 'custom':
             from_bd = WatchingCustomCRL.select().where(WatchingCustomCRL.ID == id_var)
             for row in from_bd:
@@ -1990,10 +1931,10 @@ class MainWindow(QMainWindow):
             self.sub_tab_watching_custom_crl()
             self.sub_tab_watching_disabled_crl()
             print('Info: move_watching_to_passed::moving_success_custom:')
-            logs('Info: move_watching_to_passed::moving_success_custom:', 'info', '7')
+            configurator.downlog.info('Move_watching_to_passed::moving_success_custom:')
         else:
             print('Error: move_watching_to_passed::Error_Moving')
-            logs('Error: move_watching_to_passed::Error_Moving', 'errors', '2')
+            configurator.downlog.error('Move_watching_to_passed::Error_Moving')
 
     def move_passed_to_watching(self, id_var):
 
@@ -2018,7 +1959,7 @@ class MainWindow(QMainWindow):
                 self.sub_tab_watching_disabled_crl()
                 self.sub_tab_watching_crl()
                 print('Info: move_passed_to_watching()::moving_success_current:')
-                logs('Info: move_passed_to_watching()::moving_success_current:', 'info', '7')
+                configurator.downlog.info('Move_passed_to_watching()::moving_success_current:')
             elif row.moved_from == 'custom':
                 to_custom = WatchingCustomCRL(Name=row.Name,
                                               INN=row.INN,
@@ -2038,17 +1979,17 @@ class MainWindow(QMainWindow):
                 self.sub_tab_watching_disabled_crl()
                 self.sub_tab_watching_custom_crl()
                 print('Info: move_passed_to_watching::moving_success_custom:')
-                logs('Info: move_passed_to_watching::moving_success_custom:', 'info', '7')
+                configurator.downlog.info('Info: move_passed_to_watching::moving_success_custom:')
             else:
                 print('Error: move_passed_to_watching::error_moving')
-                logs('Error: move_passed_to_watching::error_moving', 'errors', '2')
+                configurator.downlog.error('move_passed_to_watching::error_moving')
 
     def download_xml(self):
         self.ui.label_7.setText('Скачиваем список.')
         self.ui.label_7.adjustSize()
         self.ui.pushButton.setEnabled(False)
         self.ui.pushButton_2.setEnabled(False)
-        self._download = Downloader('https://e-trust.gosuslugi.ru/CA/DownloadTSL?schemaVersion=0', 'tsl.xml')
+        self._download = Downloader(configurator.config['ETrust']['url'], configurator.config['ETrust']['file'])
         self._download.pre_progress.connect(lambda x: self.ui.progressBar.setMaximum(x))
         self._download.progress.connect(lambda y: self.ui.progressBar.setValue(y))
         self._download.downloading.connect(lambda z: self.ui.label_7.setText(z))
@@ -2073,21 +2014,21 @@ class MainWindow(QMainWindow):
             file_name = wc.KeyId + '.crl'
             # file_name = wc.UrlCRL.split('/')[-1]
             # file_name = wcc.KeyId
-            folder = config['Folders']['crls']
+            folder = configurator.config['Folders']['crls']
             self.ui.label_8.setText(
                 str(counter_watching_crl) + ' из ' + str(counter_watching_crl_all) + ' Загружаем: ' + str(
                     wc.Name) + ' ' + str(wc.KeyId))
             download_file(file_url, file_name, folder, 'current', wc.ID)
             # Downloader(str(wc.UrlCRL), str(wc.SerialNumber)+'.crl')
         print('WatchingCRL downloaded ' + str(counter_watching_crl))
-        logs('Info: WatchingCRL downloaded ' + str(counter_watching_crl), 'info', '5')
+        configurator.downlog.info('WatchingCRL downloaded ' + str(counter_watching_crl))
         for wcc in query_2:
             counter_watching_custom_crl = counter_watching_custom_crl + 1
             file_url = wcc.UrlCRL
             file_name = wcc.KeyId + '.crl'
             # file_name = wcc.UrlCRL.split('/')[-1]
             # file_name = wcc.KeyId
-            folder = config['Folders']['crls']
+            folder = configurator.config['Folders']['crls']
             self.ui.label_8.setText(
                 str(counter_watching_custom_crl) + ' из ' + str(watching_custom_crl_all) + ' Загружаем: ' + str(
                     wcc.Name) + ' ' + str(wcc.KeyId))
@@ -2095,10 +2036,9 @@ class MainWindow(QMainWindow):
             # Downloader(str(wcc.UrlCRL), str(wcc.SerialNumber)+'.crl'
         self.ui.label_8.setText('Загрузка закончена')
         print('WatchingCustomCRL downloaded ' + str(counter_watching_custom_crl))
-        logs('Info: WatchingCustomCRL downloaded ' + str(counter_watching_custom_crl), 'info', '5')
+        configurator.downlog.info('WatchingCustomCRL downloaded ' + str(counter_watching_custom_crl))
         print('All download done, w=' + str(counter_watching_crl) + ', c=' + str(counter_watching_custom_crl))
-        logs('Info: All download done, w=' + str(counter_watching_crl) + ', c=' + str(counter_watching_custom_crl),
-             'info', '5')
+        configurator.downlog.info('All download done, w=' + str(counter_watching_crl) + ', c=' + str(counter_watching_custom_crl))
         self.ui.pushButton_4.setEnabled(True)
 
     def import_crl_list(self, file_name='crl_list.txt'):
@@ -2124,7 +2064,7 @@ class MainWindow(QMainWindow):
             print(self.counter_added, self.counter_added_custom, self.counter_added_exist)
         else:
             print('Not found crl_list.txt')
-            logs('Info: Not found crl_list.txt', 'info', '5')
+            configurator.logg.info('Not found crl_list.txt')
 
     def export_crl(self):
         self.ui.label_7.setText('Генерируем файл')
@@ -2262,7 +2202,7 @@ class AddCRLWindow(QWidget):
                                     | CERT.Name.contains(text)
                                     | CERT.KeyId.contains(text)
                                     | CERT.Stamp.contains(text)
-                                    | CERT.SerialNumber.contains(text)).limit(config['Listing']['cert'])
+                                    | CERT.SerialNumber.contains(text)).limit(configurator.config['Listing']['cert'])
         for row in query:
             self.ui_add.comboBox.addItem(row.Name, row.KeyId)
 
@@ -2291,7 +2231,7 @@ class AddCRLWindow(QWidget):
                                           or WatchingCRL.SerialNumber == self.ui_add.lineEdit_4.text()
                                           or WatchingCRL.UrlCRL == self.ui_add.lineEdit_9.text()).count() > 0:
                 print('Info: CRL is exists in WatchingCRL')
-                logs('Info: CRL is exists in WatchingCRL', 'info', '7')
+                configurator.logg.info('CRL is exists in WatchingCRL')
                 self.ui_add.label_10.setText('CRL уже есть в основном списке отслеживания')
             elif WatchingCustomCRL.select().where(WatchingCustomCRL.KeyId == self.ui_add.lineEdit_3.text()
                                                   or WatchingCustomCRL.Stamp == self.ui_add.lineEdit_8.text()
@@ -2299,7 +2239,7 @@ class AddCRLWindow(QWidget):
                                                   or WatchingCustomCRL.UrlCRL == self.ui_add.lineEdit_9.text()) \
                     .count() > 0:
                 print('Info: CRL is exist in WatchingCustomCRL')
-                logs('Info: CRL is exist in WatchingCustomCRL', 'info', '7')
+                configurator.logg.info('Info: CRL is exist in WatchingCustomCRL')
                 self.ui_add.label_10.setText('CRL уже есть в своем списке отслеживания')
             elif WatchingDeletedCRL.select().where(WatchingDeletedCRL.KeyId == self.ui_add.lineEdit_3.text()
                                                    or WatchingDeletedCRL.Stamp == self.ui_add.lineEdit_8.text()
@@ -2307,7 +2247,7 @@ class AddCRLWindow(QWidget):
                                                    or WatchingDeletedCRL.UrlCRL == self.ui_add.lineEdit_9.text()) \
                     .count() > 0:
                 print('Info: CRL is exist in WatchingDeletedCRL')
-                logs('Info: CRL is exist in WatchingDeletedCRL', 'info', '7')
+                configurator.logg.info('CRL is exist in WatchingDeletedCRL')
                 self.ui_add.label_10.setText('CRL уже есть в удаленных, или удалите полностью или верните обратно')
             else:
                 name = self.ui_add.lineEdit_6.text()
@@ -2320,7 +2260,7 @@ class AddCRLWindow(QWidget):
                 if name == '' or inn == '' or ogrn == '' or key_id == '' or stamp == '' or serial_number == '' or url_crl == '':
                     print('Заполните все поля')
                     print('Info: The fields should not be empty')
-                    logs('Info: The fields should not be empty', 'info', '6')
+                    configurator.logg.info('The fields should not be empty')
                     self.ui_add.label_10.setText('Заполните все поля')
                 else:
                     query = WatchingCustomCRL(Name=name,
@@ -2339,17 +2279,21 @@ class AddCRLWindow(QWidget):
                     query.save()
                     check_custom_crl(query.ID, name, key_id)
                     print('Info: CRL added in WatchingCustomCRL')
-                    logs('Info: CRL added in WatchingCustomCRL', 'info', '7')
+                    configurator.logg.info('CRL added in WatchingCustomCRL')
                     self.ui_add.label_10.setText('CRL "' + name + '" добавлен в список отслеживания')
         else:
             print('Warning: Cert not found')
-            logs('Warning: Cert not found', 'warn', '4')
+            configurator.logg.warning('Cert not found')
             self.ui_add.label_10.setText('Не найден квалифицированный сертификат УЦ')
 
 
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    app.setStyle(config['Style']['window'])
-    main_app = MainWindow()
-    main_app.show()
-    sys.exit(app.exec_())
+    with open(os.path.join(os.getcwd(), 'out.log'), 'w', encoding='utf8') as out:
+        with open(os.path.join(os.getcwd(), 'error.log'), 'w', encoding='utf8') as err:
+            with redirect_stdout(out), redirect_stderr(err):
+                app = QApplication(sys.argv)
+                app.setStyle(configurator.config['Style']['window'])
+                main_app = MainWindow()
+                main_app.show()
+                sys.exit(app.exec_())
+

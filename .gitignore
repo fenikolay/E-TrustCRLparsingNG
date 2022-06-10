@@ -16,3 +16,6 @@ cert_crl.db-*
 cert_crl.db_*
 *.log
 *.pyc
+cert_crl.db
+settings.ini
+tsl.xml
